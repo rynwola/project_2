@@ -1,0 +1,539 @@
+package project2;
+
+import java.sql.Connection;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.util.TreeSet;
+import java.util.Vector;
+import java.sql.PreparedStatement;
+
+public class MyFakebookOracle extends FakebookOracle {
+	
+	static String prefix = "ethanjyx.";
+	
+	// You must use the following variable as the JDBC connection
+	Connection oracleConnection = null;
+	
+	// You must refer to the following variables for the corresponding tables in your database
+	String cityTableName = null;
+	String userTableName = null;
+	String friendsTableName = null;
+	String currentCityTableName = null;
+	String hometownCityTableName = null;
+	String programTableName = null;
+	String educationTableName = null;
+	String eventTableName = null;
+	String participantTableName = null;
+	String albumTableName = null;
+	String photoTableName = null;
+	String coverPhotoTableName = null;
+	String tagTableName = null;
+	
+	
+	// DO NOT modify this constructor
+	public MyFakebookOracle(String u, Connection c) {
+		super();
+		String dataType = u;
+		oracleConnection = c;
+		// You will use the following tables in your Java code
+		cityTableName = prefix+dataType+"_CITIES";
+		userTableName = prefix+dataType+"_USERS";
+		friendsTableName = prefix+dataType+"_FRIENDS";
+		currentCityTableName = prefix+dataType+"_USER_CURRENT_CITY";
+		hometownCityTableName = prefix+dataType+"_USER_HOMETOWN_CITY";
+		programTableName = prefix+dataType+"_PROGRAMS";
+		educationTableName = prefix+dataType+"_EDUCATION";
+		eventTableName = prefix+dataType+"_USER_EVENTS";
+		albumTableName = prefix+dataType+"_ALBUMS";
+		photoTableName = prefix+dataType+"_PHOTOS";
+		tagTableName = prefix+dataType+"_TAGS";
+	}
+	
+	
+	@Override
+	// ***** Query 0 *****
+	// This query is given to your for free;
+	// You can use it as an example to help you write your own code
+	//
+	public void findMonthOfBirthInfo() throws SQLException{ 
+		ResultSet rst = null; 
+		PreparedStatement getMonthCountStmt = null;
+		PreparedStatement getNamesMostMonthStmt = null;
+		PreparedStatement getNamesLeastMonthStmt = null;
+		
+		try {
+			// Scrollable result set allows us to read forward (using next())
+			// and also backward.  
+			// This is needed here to support the user of isFirst() and isLast() methods,
+			// but in many cases you will not need it.
+			// To create a "normal" (unscrollable) statement, you would simply call
+			// stmt = oracleConnection.prepareStatement(sql);
+			//
+			String getMonthCountSql = "select count(*), month_of_birth from " +
+				userTableName +
+				" where month_of_birth is not null group by month_of_birth order by 1 desc";
+			getMonthCountStmt = oracleConnection.prepareStatement(getMonthCountSql, ResultSet.TYPE_SCROLL_INSENSITIVE, ResultSet.CONCUR_READ_ONLY);
+			
+			// getMonthCountSql is the query that will run
+			// For each month, find the number of friends born that month
+			// Sort them in descending order of count
+			// executeQuery will run the query and generate the result set
+			rst = getMonthCountStmt.executeQuery();
+			
+			this.monthOfMostFriend = 0;
+			this.monthOfLeastFriend = 0;
+			this.totalFriendsWithMonthOfBirth = 0;
+			while(rst.next()) {
+				int count = rst.getInt(1);
+				int month = rst.getInt(2);
+				if (rst.isFirst())
+					this.monthOfMostFriend = month;
+				if (rst.isLast())
+					this.monthOfLeastFriend = month;
+				this.totalFriendsWithMonthOfBirth += count;
+			}
+			
+			// Get the month with most friends, and the month with least friends.
+			// (Notice that this only considers months for which the number of friends is > 0)
+			// Also, count how many total friends have listed month of birth (i.e., month_of_birth not null)
+			//
+			
+			// Get the names of friends born in the "most" month
+			String getNamesMostMonthSql = "select user_id, first_name, last_name from " + 
+				userTableName + 
+				" where month_of_birth = ?";
+			getNamesMostMonthStmt = oracleConnection.prepareStatement(getNamesMostMonthSql);
+			
+			// set the first ? in the sql above to value this.monthOfMostFriend, with Integer type
+			getNamesMostMonthStmt.setInt(1, this.monthOfMostFriend);
+			rst = getNamesMostMonthStmt.executeQuery();
+			while(rst.next()) {
+				Long uid = rst.getLong(1);
+				String firstName = rst.getString(2);
+				String lastName = rst.getString(3);
+				this.friendsInMonthOfMost.add(new UserInfo(uid, firstName, lastName));
+			}
+			
+			// Get the names of friends born in the "least" month
+			String getNamesLeastMonthSql = "select first_name, last_name, user_id from " + 
+				userTableName + 
+				" where month_of_birth = ?";
+			getNamesLeastMonthStmt = oracleConnection.prepareStatement(getNamesLeastMonthSql);
+			getNamesLeastMonthStmt.setInt(1, this.monthOfLeastFriend);
+			
+			rst = getNamesLeastMonthStmt.executeQuery();
+			while(rst.next()){
+				String firstName = rst.getString(1);
+				String lastName = rst.getString(2);
+				Long uid = rst.getLong(3);
+				this.friendsInMonthOfLeast.add(new UserInfo(uid, firstName, lastName));
+			}
+		} catch (SQLException e) {
+			System.err.println(e.getMessage());
+			// can do more things here
+			
+			throw e;		
+		} finally {
+			// Close statement and result set
+			if(rst != null) 
+				rst.close();
+			
+			if(getMonthCountStmt != null)
+				getMonthCountStmt.close();
+			
+			if(getNamesMostMonthStmt != null)
+				getNamesMostMonthStmt.close();
+			
+			if(getNamesLeastMonthStmt != null)
+				getNamesLeastMonthStmt.close();
+		}
+	}
+
+	
+	
+	@Override
+	// ***** Query 1 *****
+	// Find information about friend names:
+	// (1) The longest last name (if there is a tie, include all in result)
+	// (2) The shortest last name (if there is a tie, include all in result)
+	// (3) The most common last name, and the number of times it appears (if there is a tie, include all in result)
+	//
+	public void findNameInfo() throws SQLException { // Query1
+                
+                ResultSet rst = null;
+                PreparedStatement getLongestLastNamesStmt = null;
+                PreparedStatement getShortestLastNamesStmt = null;
+                PreparedStatement getMostCommonLastNamesStmt = null;
+                
+                try {
+                        //longest last names
+                        String getLongestLastNamesSql = "SELECT (last_name) FROM " +
+                        userTableName +
+                        " WHERE len(last_name) = (SELECT max(len(last_name)) FROM " +
+                        userTableName +
+                        ")";
+                        
+                        getLongestLastNamesStmt = oracleConnection.prepareStatement(getLongestLastNamesSql, ResultSet.TYPE_SCROLL_INSENSITIVE, ResultSet.CONCUR_READ_ONLY);
+                        rst = getLongestLastNamesStmt.executeQuery();
+                        
+                        while(rst.next())
+                        {
+                                this.longestLastNames.add(rst.getString(1));
+                        }
+                        
+                        //shortest last names
+                        String getShortestLastNamesSql = "SELECT (last_name) FROM " +
+                        userTableName +
+                        " WHERE len(last_name) = (SELECT min(len(last_name)) FROM " +
+                        userTableName +
+                        ")";
+                        getShortestLastNamesStmt = oracleConnection.prepareStatement(getShortestLastNamesSql, ResultSet.TYPE_SCROLL_INSENSITIVE, ResultSet.CONCUR_READ_ONLY);
+                        rst = getShortestLastNamesStmt.executeQuery();
+                        
+                        while(rst.next())
+                        {
+                                this.shortestLastNames.add(rst.getString(1));
+                        }
+                        
+                        //most common last names
+                        String getMostCommonLastNamesSql = "SELECT last_name, COUNT(last_name) FROM " +
+                        userTableName +
+                        " GROUP BY lastName ORDER BY COUNT(last_name) desc";
+                        getLongestLastNamesStmt = oracleConnection.prepareStatement(getLongestLastNamesSql, ResultSet.TYPE_SCROLL_INSENSITIVE, ResultSet.CONCUR_READ_ONLY);
+                        rst = getLongestLastNamesStmt.executeQuery();
+                        
+                        this.mostCommonLastNamesCount = 0;
+                        
+                        while(rst.next())
+                        {
+                                this.longestLastNames.add(rst.getString(1));
+                                this.mostCommonLastNamesCount = rst.getInt(2);
+                        }
+                        
+                } catch (SQLException e) {
+                        System.err.println(e.getMessage());
+                        // can do more things here
+                        
+                        throw e;
+                } finally {
+                        // Close statement and result set
+                        if(rst != null)
+                                rst.close();
+                        
+                        if(getLongestLastNamesStmt != null)
+                                getLongestLastNamesStmt.close();
+                        
+                        if(getShortestLastNamesStmt != null)
+                                getShortestLastNamesStmt.close();
+                        
+                        if(getMostCommonLastNamesStmt != null)
+                                getMostCommonLastNamesStmt.close();
+                }
+                
+                
+        // Find the following information from your database and store the information as shown
+		/*this.longestLastNames.add("JohnJacobJingleheimerSchmidt");
+		this.shortestLastNames.add("Ng");
+		this.shortestLastNames.add("Fu");
+		this.shortestLastNames.add("Wu");
+		this.mostCommonLastNames.add("Wang");
+		this.mostCommonLastNames.add("Smith");
+		this.mostCommonLastNamesCount = 10;*/
+	}
+	
+	@Override
+	// ***** Query 2 *****
+	// Find the user(s) who have strictly more than 80 friends in the network
+	//
+	// Be careful on this query!
+	// Remember that if two users are friends, the friends table
+	// only contains the pair of user ids once, subject to 
+	// the constraint that user1_id < user2_id
+	//
+	public void popularFriends() throws SQLException {
+		// Find the following information from your database and store the information as shown 
+		this.popularFriends.add(new UserInfo(10L, "Billy", "SmellsFunny"));
+		this.popularFriends.add(new UserInfo(11L, "Jenny", "BadBreath"));
+		this.countPopularFriends = 2;
+	}
+	 
+
+	@Override
+	// ***** Query 3 *****
+	// Find the users who still live in their hometowns
+	// (I.e., current_city = hometown_city)
+	//	
+	public void liveAtHome() throws SQLException {
+                
+                
+                ResultSet rst = null;
+                PreparedStatement getLiveAtHomeStmt = null;
+                
+                try {
+                        //longest last names
+                        String getLiveAtHomeSql = "SELECT user_id, first_name, last_name FROM " +
+                        userTableName +
+                        " WHERE current_city = hometown_city";
+                        
+                        getLiveAtHomeStmt = oracleConnection.prepareStatement(getLiveAtHomeSql, ResultSet.TYPE_SCROLL_INSENSITIVE, ResultSet.CONCUR_READ_ONLY);
+                        rst = getLiveAtHomeStmt.executeQuery();
+                        
+                        while(rst.next()){
+                                String firstName = rst.getString(1);
+                                String lastName = rst.getString(2);
+                                Long uid = rst.getLong(3);
+                                this.liveAtHome.add(new UserInfo(uid, firstName, lastName));
+                                ++this.countLiveAtHome;
+                        }
+                        
+                } catch (SQLException e) {
+                        System.err.println(e.getMessage());
+                        // can do more things here
+                        
+                        throw e;
+                } finally {
+                        // Close statement and result set
+                        if(rst != null)
+                                rst.close();
+                        
+                        if(getLiveAtHomeStmt != null)
+                                getLiveAtHomeStmt.close();
+                }
+	}
+
+
+
+	@Override
+	// **** Query 4 ****
+	// Find the top-n photos based on the number of tagged users
+	// If there are ties, choose the photo with the smaller numeric PhotoID first
+	// 
+	public void findPhotosWithMostTags(int n) throws SQLException { 
+		String photoId = "1234567";
+		String albumId = "123456789";
+		String albumName = "album1";
+		String photoCaption = "caption1";
+		String photoLink = "http://google.com";
+		PhotoInfo p = new PhotoInfo(photoId, albumId, albumName, photoCaption, photoLink);
+		TaggedPhotoInfo tp = new TaggedPhotoInfo(p);
+		tp.addTaggedUser(new UserInfo(12345L, "taggedUserFirstName1", "taggedUserLastName1"));
+		tp.addTaggedUser(new UserInfo(12345L, "taggedUserFirstName2", "taggedUserLastName2"));
+		this.photosWithMostTags.add(tp);
+	}
+
+	
+	
+	
+	@Override
+	// **** Query 5 ****
+	// Find suggested "match pairs" of friends, using the following criteria:
+	// (1) One of the friends is female, and the other is male
+	// (2) Their age difference is within "yearDiff"
+	// (3) They are not friends with one another
+	// (4) They should be tagged together in at least one photo
+	//
+	// You should up to n "match pairs"
+	// If there are more than n match pairs, you should break ties as follows:
+	// (i) First choose the pairs with the largest number of shared photos
+	// (ii) If there are still ties, choose the pair with the smaller user_id for the female
+	// (iii) If there are still ties, choose the pair with the smaller user_id for the male
+	//
+	public void matchMaker(int n, int yearDiff) throws SQLException { 
+		Long girlUserId = 123L;
+		String girlFirstName = "girlFirstName";
+		String girlLastName = "girlLastName";
+		int girlYear = 1988;
+		Long boyUserId = 456L;
+		String boyFirstName = "boyFirstName";
+		String boyLastName = "boyLastName";
+		int boyYear = 1986;
+		MatchPair mp = new MatchPair(girlUserId, girlFirstName, girlLastName, 
+				girlYear, boyUserId, boyFirstName, boyLastName, boyYear);
+		String sharedPhotoId = "12345678";
+		String sharedPhotoAlbumId = "123456789";
+		String sharedPhotoAlbumName = "albumName";
+		String sharedPhotoCaption = "caption";
+		String sharedPhotoLink = "link";
+		mp.addSharedPhoto(new PhotoInfo(sharedPhotoId, sharedPhotoAlbumId, 
+				sharedPhotoAlbumName, sharedPhotoCaption, sharedPhotoLink));
+		this.bestMatches.add(mp);
+	}
+
+	
+	
+	// **** Query 6 ****
+	// Suggest friends based on mutual friends
+	// 
+	// Find the top n pairs of users in the database who share the most
+	// friends, but such that the two users are not friends themselves.
+	//
+	// Your output will consist of a set of pairs (user1_id, user2_id)
+	// No pair should appear in the result twice; you should always order the pairs so that
+	// user1_id < user2_id
+	//
+	// If there are ties, you should give priority to the pair with the smaller user1_id.
+	// If there are still ties, give priority to the pair with the smaller user2_id.
+	//
+	@Override
+	public void suggestFriendsByMutualFriends(int n) throws SQLException {
+		Long user1_id = 123L;
+		String user1FirstName = "Friend1FirstName";
+		String user1LastName = "Friend1LastName";
+		Long user2_id = 456L;
+		String user2FirstName = "Friend2FirstName";
+		String user2LastName = "Friend2LastName";
+		FriendsPair p = new FriendsPair(user1_id, user1FirstName, user1LastName, user2_id, user2FirstName, user2LastName);
+
+		p.addSharedFriend(567L, "sharedFriend1FirstName", "sharedFriend1LastName");
+		p.addSharedFriend(678L, "sharedFriend2FirstName", "sharedFriend2LastName");
+		p.addSharedFriend(789L, "sharedFriend3FirstName", "sharedFriend3LastName");
+		this.suggestedFriendsPairs.add(p);
+	}
+	
+	
+	//@Override
+	// ***** Query 7 *****
+	// Given the ID of a user, find information about that
+	// user's oldest friend and youngest friend
+	// 
+	// If two users have exactly the same age, meaning that they were born
+	// on the same day, then assume that the one with the larger user_id is older
+	//
+	public void findAgeInfo(Long user_id) throws SQLException {
+                
+                PreparedStatement getFriendsStmt = null;
+                PreparedStatement getOldestFriendStmt = null;
+                PreparedStatement getYoungestFriendStmt = null;
+                ResultSet rst = null;
+                
+                try {
+                        //longest last names
+                        String getFriendSql = "SELECT user_id, first_name, last_name FROM " +
+                        userTableName +
+                        " JOIN ( "
+                        " SELECT frnd_table.user1_id, find_table.user2.id FROM " +
+                        friendsTableName +
+                        " frnd_table WHERE frnd_table.user1_id = "
+                        user_id +
+                        " OR frnd_table.user2_id = " +
+                        user_id + ") all_friends ON all_friends.user_id = frnd_table.user1";
+                        
+                        getFriendsStmt = oracleConnection.prepareStatement(getFriendsSql, ResultSet.TYPE_SCROLL_INSENSITIVE, ResultSet.CONCUR_READ_ONLY);
+                        rst = getFriendsStmt.executeQuery();
+                        
+                        while(rst.next())
+                        {
+                                int id_1 = rst.getInt(1)
+                                if (id_1 == user_id)
+                                {
+                                        id_1 = rst.getInt(2)
+                                }
+                                this.longestLastNames.add(rst.getString(1));
+                        }
+                        
+                        //shortest last names
+                        
+                } catch (SQLException e) {
+                        System.err.println(e.getMessage());
+                        // can do more things here
+                        
+                        throw e;
+                } finally {
+                        // Close statement and result set
+                        if(rst != null)
+                                rst.close();
+                        
+                        if(getFriendsStmt != null)
+                                getFriendsStmt.close();
+                        
+                        if(getOldestFriendStmt != null)
+                                getOldestFriendStmt.close();
+                        
+                        if(getYoungestFriendStmt != null)
+                                getYoungestFriendStmt.close();
+                }
+                
+		this.oldestFriend = new UserInfo(1L, "Oliver", "Oldham");
+		this.youngestFriend = new UserInfo(25L, "Yolanda", "Young");
+	}
+	
+	
+	@Override
+	// ***** Query 8 *****
+	// 
+	// Find the name of the city with the most events, as well as the number of 
+	// events in that city.  If there is a tie, return the names of all of the (tied) cities.
+	//
+	public void findEventCities() throws SQLException {
+		this.eventCount = 12;
+		this.popularCityNames.add("Ann Arbor");
+		this.popularCityNames.add("Ypsilanti");
+	}
+	
+	
+	
+	@Override
+//	 ***** Query 9 *****
+	//
+	// Find pairs of potential siblings and print them out in the following format:
+	//   # pairs of siblings
+	//   sibling1 lastname(id) and sibling2 lastname(id)
+	//   siblingA lastname(id) and siblingB lastname(id)  etc.
+	//
+	// A pair of users are potential siblings if they have the same last name and hometown, if they are friends, and
+	// if they are less than 10 years apart in age.  Pairs of siblings are returned with the lower user_id user first
+	// on the line.  They are ordered based on the first user_id and in the event of a tie, the second user_id.
+	//  
+	//
+	public void findPotentialSiblings() throws SQLException
+        {
+                ResultSet rst = null;
+                PreparedStatement getPotentialSiblingsStmt = null;
+                
+                try {
+                        "SELECT "
+                        String getPotentialSiblingsSql = "SELECT user_id, first_name, last_name FROM " +
+                        userTableName +
+                        " u JOIN ( "
+                        " SELECT frnd_table.user1_id, find_table.user2.id FROM " +
+                        friendsTableName +
+                        ") all_friends ON all_friends.user1_id = "
+                        user_id + ") all_friends ON all_friends.user1_id = u.user_id";
+                        
+                        getPotentialSiblingsStmt = oracleConnection.prepareStatement(getPotentialSiblingsSql, ResultSet.TYPE_SCROLL_INSENSITIVE, ResultSet.CONCUR_READ_ONLY);
+                        rst = getPotentialSiblingsStmt.executeQuery();
+                        
+                        while(rst.next())
+                        {
+                                
+                        }
+                        
+                } catch (SQLException e) {
+                        System.err.println(e.getMessage());
+                        // can do more things here
+                        
+                        throw e;
+                } finally {
+                        // Close statement and result set
+                        if(rst != null)
+                                rst.close();
+                        
+                        if(getPotentialSiblingsStmt != null)
+                                getPotentialSiblingsStmt.close();
+                }
+                
+                PreparedStatement getLongestLastNamesStmt = null;
+                
+                
+		Long user1_id = 123L;
+		String user1FirstName = "Friend1FirstName";
+		String user1LastName = "Friend1LastName";
+		Long user2_id = 456L;
+		String user2FirstName = "Friend2FirstName";
+		String user2LastName = "Friend2LastName";
+		SiblingInfo s = new SiblingInfo(user1_id, user1FirstName, user1LastName, user2_id, user2FirstName, user2LastName);
+		this.siblings.add(s);
+	}
+	
+}
