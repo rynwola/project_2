@@ -30,7 +30,6 @@ public class MyFakebookOracle extends FakebookOracle {
 	String coverPhotoTableName = null;
 	String tagTableName = null;
 	
-	
 	// DO NOT modify this constructor
 	public MyFakebookOracle(String u, Connection c) {
 		super();
@@ -168,9 +167,9 @@ public class MyFakebookOracle extends FakebookOracle {
                 
                 try {
                         //longest last names
-                        String getLongestLastNamesSql = "SELECT (last_name) FROM " +
+                        String getLongestLastNamesSql = "SELECT DISTINCT (last_name) FROM " +
                         userTableName +
-                        " WHERE len(last_name) = (SELECT max(len(last_name)) FROM " +
+                        " WHERE LENGTH(last_name) = (SELECT max(LENGTH(last_name)) FROM " +
                         userTableName +
                         ")";
                         
@@ -183,9 +182,9 @@ public class MyFakebookOracle extends FakebookOracle {
                         }
                         
                         //shortest last names
-                        String getShortestLastNamesSql = "SELECT (last_name) FROM " +
+                        String getShortestLastNamesSql = "SELECT DISTINCT (last_name) FROM " +
                         userTableName +
-                        " WHERE len(last_name) = (SELECT min(len(last_name)) FROM " +
+                        " WHERE LENGTH(last_name) = (SELECT min(LENGTH(last_name)) FROM " +
                         userTableName +
                         ")";
                         getShortestLastNamesStmt = oracleConnection.prepareStatement(getShortestLastNamesSql, ResultSet.TYPE_SCROLL_INSENSITIVE, ResultSet.CONCUR_READ_ONLY);
@@ -193,24 +192,32 @@ public class MyFakebookOracle extends FakebookOracle {
                         
                         while(rst.next())
                         {
-                                this.shortestLastNames.add(rst.getString(1));
+                           	this.shortestLastNames.add(rst.getString(1));
                         }
                         
                         //most common last names
-                        String getMostCommonLastNamesSql = "SELECT last_name, COUNT(last_name) FROM " +
+                        String getMostCommonLastNamesSql = "SELECT last_name, COUNT(*) FROM " +
                         userTableName +
-                        " GROUP BY lastName ORDER BY COUNT(last_name) desc";
-                        getLongestLastNamesStmt = oracleConnection.prepareStatement(getLongestLastNamesSql, ResultSet.TYPE_SCROLL_INSENSITIVE, ResultSet.CONCUR_READ_ONLY);
-                        rst = getLongestLastNamesStmt.executeQuery();
+                        " WHERE last_name is not null GROUP BY last_name ORDER BY count(last_name) DESC";
+                        getMostCommonLastNamesStmt = oracleConnection.prepareStatement(getMostCommonLastNamesSql, ResultSet.TYPE_SCROLL_INSENSITIVE, ResultSet.CONCUR_READ_ONLY);
+                        rst = getMostCommonLastNamesStmt.executeQuery();
                         
                         this.mostCommonLastNamesCount = 0;
                         
+                    	int count = 0;
                         while(rst.next())
                         {
-                                this.longestLastNames.add(rst.getString(1));
-                                this.mostCommonLastNamesCount = rst.getInt(2);
+                        	if(rst.isFirst() || rst.getInt(2) == count)
+                        	{
+                        		this.mostCommonLastNames.add(rst.getString(1));
+                        		count = rst.getInt(2);
+                                this.mostCommonLastNamesCount = count;
+                        	}
+                        	else
+                        	{
+                        		break;
+                        	}
                         }
-                        
                 } catch (SQLException e) {
                         System.err.println(e.getMessage());
                         // can do more things here
@@ -242,6 +249,7 @@ public class MyFakebookOracle extends FakebookOracle {
 		this.mostCommonLastNamesCount = 10;*/
 	}
 	
+	
 	@Override
 	// ***** Query 2 *****
 	// Find the user(s) who have strictly more than 80 friends in the network
@@ -252,14 +260,51 @@ public class MyFakebookOracle extends FakebookOracle {
 	// the constraint that user1_id < user2_id
 	//
 	public void popularFriends() throws SQLException {
-		// Find the following information from your database and store the information as shown 
-		this.popularFriends.add(new UserInfo(10L, "Billy", "SmellsFunny"));
-		this.popularFriends.add(new UserInfo(11L, "Jenny", "BadBreath"));
-		this.countPopularFriends = 2;
+		//Find the following information from your database and store the information as shown 
+		// this.popularFriends.add(new UserInfo(10L, "Billy", "SmellsFunny"));
+		// this.popularFriends.add(new UserInfo(11L, "Jenny", "BadBreath"));
+		// this.countPopularFriends = 2;
+		ResultSet rst = null; 
+		PreparedStatement getFriendCountStmt = null;
+		// // PreparedStatement getNamesMostMonthStmt = null;
+		// // PreparedStatement getNamesLeastMonthStmt = null;
+		  try{
+		  	String getFriendCountSql = "select first_name, last_name, user_id from " +
+		  		userTableName + 
+		  		" where user_id in (select user1_id from ( select user1_id, user2_id from " +
+		  		friendsTableName +
+		  		" union select user2_id, user1_id from " +
+		  		friendsTableName +
+		  		") group by user1_id HAVING COUNT(*) > 80)";
+
+		  	getFriendCountStmt = oracleConnection.prepareStatement(getFriendCountSql, ResultSet.TYPE_SCROLL_INSENSITIVE, ResultSet.CONCUR_READ_ONLY);
+
+		  	rst = getFriendCountStmt.executeQuery();
+		  	this.countPopularFriends = 0;
+		  	while(rst.next()) {
+		  		String firstName = rst.getString(1);
+				String lastName = rst.getString(2);
+				Long uid = rst.getLong(3);
+				this.popularFriends.add(new UserInfo(uid, firstName, lastName));
+		  		this.countPopularFriends++;
+		  	}
+		  }
+		  catch (SQLException e) {
+		  	System.err.println(e.getMessage());
+		// // 	// can do more things here
+		  	throw e;		
+		  }
+		 finally {
+       		if(rst != null) 
+        		rst.close();
+      
+      		if(getFriendCountStmt != null)
+        		getFriendCountStmt.close();
+        }
+	//	PreparedStatement getPopularFriendsStmt = null;
 	}
 	 
-
-	@Override
+@Override
 	// ***** Query 3 *****
 	// Find the users who still live in their hometowns
 	// (I.e., current_city = hometown_city)
@@ -272,17 +317,17 @@ public class MyFakebookOracle extends FakebookOracle {
                 
                 try {
                         //longest last names
-                        String getLiveAtHomeSql = "SELECT user_id, first_name, last_name FROM " +
-                        userTableName +
-                        " WHERE current_city = hometown_city";
+                        String getLiveAtHomeSql = "SELECT u.user_id, u.first_name, u.last_name FROM " +
+                        userTableName + " U, " + currentCityTableName + " C, " + hometownCityTableName + " H " +
+                        "WHERE c.current_city_id = h.hometown_city_id AND u.user_id = c.user_id AND u.user_id = h.user_id";
                         
                         getLiveAtHomeStmt = oracleConnection.prepareStatement(getLiveAtHomeSql, ResultSet.TYPE_SCROLL_INSENSITIVE, ResultSet.CONCUR_READ_ONLY);
                         rst = getLiveAtHomeStmt.executeQuery();
                         
                         while(rst.next()){
-                                String firstName = rst.getString(1);
-                                String lastName = rst.getString(2);
-                                Long uid = rst.getLong(3);
+                                String firstName = rst.getString(2);
+                                String lastName = rst.getString(3);
+                                Long uid = rst.getLong(1);
                                 this.liveAtHome.add(new UserInfo(uid, firstName, lastName));
                                 ++this.countLiveAtHome;
                         }
@@ -310,17 +355,92 @@ public class MyFakebookOracle extends FakebookOracle {
 	// If there are ties, choose the photo with the smaller numeric PhotoID first
 	// 
 	public void findPhotosWithMostTags(int n) throws SQLException { 
-		String photoId = "1234567";
-		String albumId = "123456789";
-		String albumName = "album1";
-		String photoCaption = "caption1";
-		String photoLink = "http://google.com";
-		PhotoInfo p = new PhotoInfo(photoId, albumId, albumName, photoCaption, photoLink);
-		TaggedPhotoInfo tp = new TaggedPhotoInfo(p);
-		tp.addTaggedUser(new UserInfo(12345L, "taggedUserFirstName1", "taggedUserLastName1"));
-		tp.addTaggedUser(new UserInfo(12345L, "taggedUserFirstName2", "taggedUserLastName2"));
-		this.photosWithMostTags.add(tp);
+		// String photoId = "1234567";
+		// String albumId = "123456789";
+		// String albumName = "album1";
+		// String photoCaption = "caption1";
+		// String photoLink = "http://google.com";
+		// PhotoInfo p = new PhotoInfo(photoId, albumId, albumName, photoCaption, photoLink);
+		// TaggedPhotoInfo tp = new TaggedPhotoInfo(p);
+		// tp.addTaggedUser(new UserInfo(12345L, "taggedUserFirstName1", "taggedUserLastName1"));
+		// tp.addTaggedUser(new UserInfo(12345L, "taggedUserFirstName2", "taggedUserLastName2"));
+		// this.photosWithMostTags.add(tp);
+		ResultSet tst = null; 
+		ResultSet pst = null;
+		ResultSet ust = null;
+		PreparedStatement tagPhotoStmt = null;
+		PreparedStatement photoInfoStmt = null;
+		PreparedStatement usersStmt = null;
+		try {
+			String tagPhotoSQL = "SELECT tag_photo_id"+ 
+			" FROM " + 
+			tagTableName + 
+			" GROUP BY tag_photo_id ORDER BY COUNT(tag_photo_id) DESC, tag_photo_id ASC";
+			tagPhotoStmt = oracleConnection.prepareStatement(tagPhotoSQL, ResultSet.TYPE_SCROLL_INSENSITIVE, ResultSet.CONCUR_READ_ONLY);
+			tst = tagPhotoStmt.executeQuery();
+			int i = n;
+			while(tst.next() && n !=0 ) {
+				String photoInfoSQL = "SELECT P.photo_id, A.album_id, A.album_name, P.photo_caption, P.photo_link FROM " + 
+					 photoTableName + 
+					 " P, " + 
+					 albumTableName + 
+					 " A WHERE P.photo_id = ? AND P.album_id=A.album_id";
+				photoInfoStmt = oracleConnection.prepareStatement(photoInfoSQL, ResultSet.TYPE_SCROLL_INSENSITIVE, ResultSet.CONCUR_READ_ONLY);
+				String tid = tst.getString(1);
+				photoInfoStmt.setString(1, tid);
+				pst = photoInfoStmt.executeQuery();
+				while (pst.next()){
+					String pid = pst.getString(1);
+					String aid = pst.getString(2);
+					String albumName = pst.getString(3);
+					String photoCaption = pst.getString(4);
+					String photoLink = pst.getString(5);
+					PhotoInfo x = new PhotoInfo(pid, aid, albumName, photoCaption, photoLink);
+					TaggedPhotoInfo taggedPhoto = new TaggedPhotoInfo(x);
+					
+					String getTaggedUsersSql = "SELECT user_id, first_name, last_name FROM " + 
+							userTableName + 
+							" WHERE user_id IN (SELECT tag_subject_id FROM " + 
+							tagTableName + 
+							" WHERE tag_photo_id = ?)";
+							//Question mark dynamic
+
+					usersStmt = oracleConnection.prepareStatement(getTaggedUsersSql, ResultSet.TYPE_SCROLL_INSENSITIVE, ResultSet.CONCUR_READ_ONLY);
+					usersStmt.setString(1, tid);
+					//Don't know this but they did it in query 0
+					ust = usersStmt.executeQuery();
+					
+					while (ust.next()){
+						Long uid = ust.getLong(1);
+						String firstName = ust.getString(2);
+						String lastName = ust.getString(3);
+						taggedPhoto.addTaggedUser(new UserInfo(uid, firstName, lastName));
+					}
+					
+					this.photosWithMostTags.add(taggedPhoto);
+				}
+				n--;
+			}
+		} catch (SQLException e) {
+			System.err.println(e.getMessage());
+			throw e;		
+		} finally {
+			if(ust != null) 
+				ust.close();
+			if(tst != null) 
+				tst.close();
+			if(pst != null) 
+				pst.close();
+			if(photoInfoStmt != null)
+				photoInfoStmt.close();
+			if(usersStmt != null)
+				usersStmt.close();
+			if(tagPhotoStmt != null)
+				tagPhotoStmt.close();
+
+		}
 	}
+
 
 	
 	
@@ -377,22 +497,140 @@ public class MyFakebookOracle extends FakebookOracle {
 	//
 	@Override
 	public void suggestFriendsByMutualFriends(int n) throws SQLException {
-		Long user1_id = 123L;
-		String user1FirstName = "Friend1FirstName";
-		String user1LastName = "Friend1LastName";
-		Long user2_id = 456L;
-		String user2FirstName = "Friend2FirstName";
-		String user2LastName = "Friend2LastName";
-		FriendsPair p = new FriendsPair(user1_id, user1FirstName, user1LastName, user2_id, user2FirstName, user2LastName);
+		// Long user1_id = 123L;
+		// String user1FirstName = "Friend1FirstName";
+		// String user1LastName = "Friend1LastName";
+		// Long user2_id = 456L;
+		// String user2FirstName = "Friend2FirstName";
+		// String user2LastName = "Friend2LastName";
+		// FriendsPair p = new FriendsPair(user1_id, user1FirstName, user1LastName, user2_id, user2FirstName, user2LastName);
 
-		p.addSharedFriend(567L, "sharedFriend1FirstName", "sharedFriend1LastName");
-		p.addSharedFriend(678L, "sharedFriend2FirstName", "sharedFriend2LastName");
-		p.addSharedFriend(789L, "sharedFriend3FirstName", "sharedFriend3LastName");
-		this.suggestedFriendsPairs.add(p);
+		// p.addSharedFriend(567L, "sharedFriend1FirstName", "sharedFriend1LastName");
+		// p.addSharedFriend(678L, "sharedFriend2FirstName", "sharedFriend2LastName");
+		// p.addSharedFriend(789L, "sharedFriend3FirstName", "sharedFriend3LastName");
+		// this.suggestedFriendsPairs.add(p);
+		ResultSet rst = null; 
+		Statement stmt = null;
+try{
+	 stmt = oracleConnection.createStatement(ResultSet.TYPE_SCROLL_INSENSITIVE, ResultSet.CONCUR_READ_ONLY);		
+
+    	 rst = stmt.executeQuery("SELECT mutualFriends.user1, U1.first_name, U1.last_name, mutualFriends.user2, U2.first_name, U2.last_name, mutualList.user3, U3.first_name, U3.last_name, mutualFriends.count "
+     		  + "FROM ( "
+          	  + "SELECT mutual.person1 as user1, mutual.person2 as user2, count(*) as count FROM "
+              + "(SELECT F1.user1_id as person1, F2.user1_id as person2, F2.user2_id as person3 "
+              + "FROM " 
+              + friendsTableName 
+              + " F1, " 
+              + friendsTableName 
+              + " F2 "
+              + "WHERE F1.user2_id=F2.user2_id AND F1.user1_id!=F2.user1_id "
+              + "UNION ALL "
+              + "SELECT F1.user1_id as person1, F2.user2_id as person2, F2.user1_id as person3 "
+              + "FROM " 
+              + friendsTableName 
+              + " F1, " 
+              + friendsTableName 
+              + " F2 "
+              + "WHERE F1.user2_id=F2.user1_id AND F1.user1_id!=F2.user2_id "
+              + "UNION ALL "
+              + "SELECT F1.user2_id as person1, F2.user2_id as person2, F2.user1_id as person3 "
+              + "FROM " 
+              + friendsTableName 
+              + " F1, " 
+              + friendsTableName 
+              + " F2 "
+              + "WHERE F1.user1_id=F2.user1_id AND F1.user2_id!=F2.user2_id "
+              + "ORDER BY 3 ASC) mutual "
+          	  + "GROUP BY mutual.person1, mutual.person2 ORDER BY 3 DESC) mutualFriends "
+      		  + "FULL OUTER JOIN ( "
+          	  + "SELECT F1.user1_id as user1, F2.user1_id as user2, F2.user2_id as user3 "
+              + "FROM " 
+              + friendsTableName 
+              + " F1, " 
+              + friendsTableName 
+              + " F2 "
+              + "WHERE F1.user2_id=F2.user2_id AND F1.user1_id!=F2.user1_id "
+              + "UNION ALL "
+              + "SELECT F1.user1_id, F2.user2_id, F2.user1_id "
+              + "FROM " 
+              + friendsTableName 
+              + " F1, " 
+              + friendsTableName 
+              + " F2 "
+              + "WHERE F1.user2_id=F2.user1_id AND F1.user1_id!=F2.user2_id "
+              + "UNION ALL "
+              + "SELECT F1.user2_id, F2.user2_id, F2.user1_id "
+              + "FROM " 
+              + friendsTableName 
+              + " F1, " 
+              + friendsTableName 
+              + " F2 "
+              + "WHERE F1.user1_id=F2.user1_id AND F1.user2_id!=F2.user2_id "
+              + "ORDER BY 3 ASC) mutualList "
+     		  + "ON mutualFriends.user1=mutualList.user1 AND mutualFriends.user2=mutualList.user2 "
+     		  + "FULL OUTER JOIN " 
+     		  + userTableName 
+     		  + " U1 ON U1.user_id=mutualFriends.user1 "
+     		  + "FULL OUTER JOIN " 
+     		  + userTableName 
+     		  + " U2 ON U2.user_id=mutualFriends.user2 "
+     		  + "FULL OUTER JOIN " 
+     		  + userTableName 
+     		  + " U3 ON U3.user_id=mutualList.user3 "
+     		  + "WHERE mutualFriends.user1<mutualFriends.user2 AND mutualFriends.user1 NOT IN ( "
+              + "SELECT F.user1_id FROM " 
+              + friendsTableName 
+              + " F "
+              + "WHERE (mutualFriends.user1=F.user1_id AND mutualFriends.user2=F.user2_id)) "
+     		  + "ORDER BY mutualFriends.count DESC, mutualFriends.user1 ASC, mutualFriends.user2 ASC, mutualList.user3 ASC"
+    );
+
+    Long base1_id = null;
+    Long base2_id = null;
+    rst.next();
+    for(int i = 0; i < n; i++) {
+      // Get friend pair
+		  Long user1_id = rst.getLong(1);
+	    String user1FirstName = rst.getString(2);
+	    String user1LastName = rst.getString(3);
+	    Long user2_id = rst.getLong(4);
+	    String user2FirstName = rst.getString(5);
+	    String user2LastName = rst.getString(6);
+	    FriendsPair p = new FriendsPair(user1_id, user1FirstName, user1LastName, user2_id, user2FirstName, user2LastName);
+      
+      base1_id = user1_id;
+      base2_id = user2_id;
+
+      // Get shared friends
+      do {
+        user1_id = rst.getLong(1);
+        user2_id = rst.getLong(4);
+        if(!user1_id.equals(base1_id) || !user2_id.equals(base2_id)) break;
+
+        Long sharedFriendId = rst.getLong(7);
+        String sharedFriendFirstName = rst.getString(8);
+        String sharedFriendLastName = rst.getString(9);
+		    p.addSharedFriend(sharedFriendId, sharedFriendFirstName, sharedFriendLastName);
+		    this.suggestedFriendsPairs.add(p);
+      } while(rst.next());
+    }
+}
+				catch (SQLException e) {
+			System.err.println(e.getMessage());
+			// can do more things here
+			
+			throw e;		
+		} finally {
+		// Close statement and result set
+		rst.close();
+		stmt.close();
+		}
+
+
 	}
 	
 	
-	//@Override
+//@Override
 	// ***** Query 7 *****
 	// Given the ID of a user, find information about that
 	// user's oldest friend and youngest friend
@@ -401,10 +639,11 @@ public class MyFakebookOracle extends FakebookOracle {
 	// on the same day, then assume that the one with the larger user_id is older
 	//
 	public void findAgeInfo(Long user_id) throws SQLException {
-                
+                PreparedStatement getFriendsStmt = null;
+                ResultSet rst = null;
                 try {
                         //longest last names
-                        String getFriendSql = "SELECT user_id, first_name, last_name, year_of_birth FROM " +
+                        String getFriendsSql = "SELECT user_id, first_name, last_name, year_of_birth FROM " +
                         userTableName +
                         " u JOIN (SELECT friend_table.user1_id, friend_table.user2_id FROM " +
                         friendsTableName +
@@ -420,17 +659,17 @@ public class MyFakebookOracle extends FakebookOracle {
                         while(rst.next()) {
                                 if (rst.isFirst())
                                 {
-                                        int user_id = rst.getInt(1)
-                                        String first_name = rst.getString(2)
-                                        String lastName = rst.getString(3)
-                                        this.oldestFriend = (new UserInfo(user_id, first_name, last_name);
+                                        Long uid = rst.getLong(1);
+                                        String first_name = rst.getString(2);
+                                        String last_name = rst.getString(3);
+                                        this.oldestFriend = new UserInfo(uid, first_name, last_name);
                                 }
                                 if (rst.isLast())
                                 {
-                                        int user_id = rst.getInt(1)
-                                        String first_name = rst.getString(2)
-                                        String lastName = rst.getString(3)
-                                        this.youngestFriend = (new UserInfo(user_id, first_name, last_name);
+                                        Long uid = rst.getLong(1);
+                                        String first_name = rst.getString(2);
+                                        String last_name = rst.getString(3);
+                                        this.youngestFriend = new UserInfo(uid, first_name, last_name);
                                 }
                         }
                         
@@ -459,9 +698,45 @@ public class MyFakebookOracle extends FakebookOracle {
 	// events in that city.  If there is a tie, return the names of all of the (tied) cities.
 	//
 	public void findEventCities() throws SQLException {
-		this.eventCount = 12;
-		this.popularCityNames.add("Ann Arbor");
-		this.popularCityNames.add("Ypsilanti");
+		// this.eventCount = 12;
+		// this.popularCityNames.add("Ann Arbor");
+		// this.popularCityNames.add("Ypsilanti");
+		ResultSet rst = null; 
+		PreparedStatement getEventCountStmt = null;
+		// PreparedStatement getNamesMostMonthStmt = null;
+		// PreparedStatement getNamesLeastMonthStmt = null;
+
+		try{
+			String getEventCountSql = "select count(e.event_city_id), c.city_name FROM " + 
+				eventTableName +
+				" e, " +
+				cityTableName +
+				" c where e.event_city_id = c.city_id GROUP BY c.city_name HAVING count (e.event_id) = (SELECT MAX (count(*)) FROM "+
+				eventTableName + " GROUP BY event_city_id)";
+
+			getEventCountStmt = oracleConnection.prepareStatement(getEventCountSql, ResultSet.TYPE_SCROLL_INSENSITIVE, ResultSet.CONCUR_READ_ONLY);
+
+			rst = getEventCountStmt.executeQuery();
+
+			while(rst.next()) {
+				this.eventCount = rst.getInt(1);
+				this.popularCityNames.add(rst.getString(2));
+			}
+
+		}
+		catch (SQLException e) {
+			System.err.println(e.getMessage());
+			// can do more things here
+			
+			throw e;		
+		} finally {
+			// Close statement and result set
+			if(rst != null) 
+				rst.close();
+			
+			if(getEventCountStmt != null)
+				getEventCountStmt.close();
+		}
 	}
 	
 	
@@ -479,54 +754,57 @@ public class MyFakebookOracle extends FakebookOracle {
 	// on the line.  They are ordered based on the first user_id and in the event of a tie, the second user_id.
 	//  
 	//
-	public void findPotentialSiblings() throws SQLException
-        {
-                ResultSet rst = null;
-                PreparedStatement getPotentialSiblingsStmt = null;
-                
-                try {
-                        "SELECT "
-                        String getPotentialSiblingsSql = "SELECT user_id, first_name, last_name FROM " +
-                        userTableName +
-                        " u JOIN ( "
-                        " SELECT frnd_table.user1_id, find_table.user2.id FROM " +
-                        friendsTableName +
-                        ") all_friends ON all_friends.user1_id = "
-                        user_id + ") all_friends ON all_friends.user1_id = u.user_id";
-                        
-                        getPotentialSiblingsStmt = oracleConnection.prepareStatement(getPotentialSiblingsSql, ResultSet.TYPE_SCROLL_INSENSITIVE, ResultSet.CONCUR_READ_ONLY);
-                        rst = getPotentialSiblingsStmt.executeQuery();
-                        
-                        while(rst.next())
-                        {
-                                
-                        }
-                        
-                } catch (SQLException e) {
-                        System.err.println(e.getMessage());
-                        // can do more things here
-                        
-                        throw e;
-                } finally {
-                        // Close statement and result set
-                        if(rst != null)
-                                rst.close();
-                        
-                        if(getPotentialSiblingsStmt != null)
-                                getPotentialSiblingsStmt.close();
-                }
-                
-                PreparedStatement getLongestLastNamesStmt = null;
-                
-                
-		Long user1_id = 123L;
-		String user1FirstName = "Friend1FirstName";
-		String user1LastName = "Friend1LastName";
-		Long user2_id = 456L;
-		String user2FirstName = "Friend2FirstName";
-		String user2LastName = "Friend2LastName";
-		SiblingInfo s = new SiblingInfo(user1_id, user1FirstName, user1LastName, user2_id, user2FirstName, user2LastName);
-		this.siblings.add(s);
+	public void findPotentialSiblings() throws SQLException {
+		// Long user1_id = 123L;
+		// String user1FirstName = "Friend1FirstName";
+		// String user1LastName = "Friend1LastName";
+		// Long user2_id = 456L;
+		// String user2FirstName = "Friend2FirstName";
+		// String user2LastName = "Friend2LastName";
+		// SiblingInfo s = new SiblingInfo(user1_id, user1FirstName, user1LastName, user2_id, user2FirstName, user2LastName);
+		// this.siblings.add(s);
+		ResultSet rst = null; 
+		PreparedStatement findSiblingPairStmt = null;
+		try{
+			String findSiblingPairSQL = "SELECT s1.user_id, s2.user_id, s1.last_name, s2.last_name, s1.first_name, s2.first_name FROM "+
+			userTableName +
+			" s1, " +
+			userTableName +
+			" s2, " +
+			hometownCityTableName + 
+			" HT1, " +
+			hometownCityTableName +
+			" HT2 WHERE s1.last_name = s2.last_name and HT1.hometown_city_id = HT2.hometown_city_id AND s1.user_id = HT1.user_id AND s2.user_id = HT2.user_id " + 
+			" AND s1.user_id IN ( SELECT U.user1_id FROM " +
+			friendsTableName + 
+			" U WHERE U.user2_id = S2.user_id UNION  SELECT U.user2_id as user_id FROM " +
+			friendsTableName +
+			" U WHERE u.user1_id = s2.user_id) and ABS(S1.year_of_birth - S2.year_of_birth) < 10 and S1.user_id < S2.user_id order by S1.user_id, S2.user_id";
+			
+			findSiblingPairStmt = oracleConnection.prepareStatement(findSiblingPairSQL, ResultSet.TYPE_SCROLL_INSENSITIVE, ResultSet.CONCUR_READ_ONLY);
+			rst = findSiblingPairStmt.executeQuery();
+			while(rst.next()) {
+				Long uid1 = rst.getLong(1);
+				String fname1 = rst.getString(5);
+				String lname1 = rst.getString(3);
+				Long uid2 = rst.getLong(2);
+				String fname2 = rst.getString(6);
+				String lname2=rst.getString(4);
+
+				this.siblings.add(new SiblingInfo(uid1,fname1,lname1,uid2,fname2,lname2));
+			}
+
+		}
+		catch (SQLException e) {
+			System.err.println(e.getMessage());
+			// can do more things here
+			throw e;		
+		} finally {
+			// Close statement and result set
+			if(rst != null) 
+				rst.close();
+			if(findSiblingPairStmt != null)
+				findSiblingPairStmt.close();
+		}
 	}
-	
 }
