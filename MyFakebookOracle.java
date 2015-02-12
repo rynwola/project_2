@@ -402,34 +402,36 @@ public class MyFakebookOracle extends FakebookOracle {
 	//
 	public void findAgeInfo(Long user_id) throws SQLException {
                 
-                PreparedStatement getFriendsStmt = null;
-                PreparedStatement getOldestFriendStmt = null;
-                PreparedStatement getYoungestFriendStmt = null;
-                ResultSet rst = null;
-                
                 try {
                         //longest last names
-                        String getFriendSql = "SELECT user_id, first_name, last_name FROM " +
+                        String getFriendSql = "SELECT user_id, first_name, last_name, year_of_birth FROM " +
                         userTableName +
-                        " JOIN ( "
-                        " SELECT frnd_table.user1_id, find_table.user2.id FROM " +
+                        " u JOIN (SELECT friend_table.user1_id, friend_table.user2_id FROM " +
                         friendsTableName +
-                        " frnd_table WHERE frnd_table.user1_id = "
+                        " friend_table WHERE friend_table.user1_id = " +
                         user_id +
-                        " OR frnd_table.user2_id = " +
-                        user_id + ") all_friends ON all_friends.user_id = frnd_table.user1";
+                        " OR friend_table.user2_id = " +
+                        user_id +
+                        ") all_friends ON all_friends.user1_id = u.user_id ORDER BY year_of_birth";
                         
                         getFriendsStmt = oracleConnection.prepareStatement(getFriendsSql, ResultSet.TYPE_SCROLL_INSENSITIVE, ResultSet.CONCUR_READ_ONLY);
                         rst = getFriendsStmt.executeQuery();
                         
-                        while(rst.next())
-                        {
-                                int id_1 = rst.getInt(1)
-                                if (id_1 == user_id)
+                        while(rst.next()) {
+                                if (rst.isFirst())
                                 {
-                                        id_1 = rst.getInt(2)
+                                        int user_id = rst.getInt(1)
+                                        String first_name = rst.getString(2)
+                                        String lastName = rst.getString(3)
+                                        this.oldestFriend = (new UserInfo(user_id, first_name, last_name);
                                 }
-                                this.longestLastNames.add(rst.getString(1));
+                                if (rst.isLast())
+                                {
+                                        int user_id = rst.getInt(1)
+                                        String first_name = rst.getString(2)
+                                        String lastName = rst.getString(3)
+                                        this.youngestFriend = (new UserInfo(user_id, first_name, last_name);
+                                }
                         }
                         
                         //shortest last names
@@ -446,16 +448,7 @@ public class MyFakebookOracle extends FakebookOracle {
                         
                         if(getFriendsStmt != null)
                                 getFriendsStmt.close();
-                        
-                        if(getOldestFriendStmt != null)
-                                getOldestFriendStmt.close();
-                        
-                        if(getYoungestFriendStmt != null)
-                                getYoungestFriendStmt.close();
                 }
-                
-		this.oldestFriend = new UserInfo(1L, "Oliver", "Oldham");
-		this.youngestFriend = new UserInfo(25L, "Yolanda", "Young");
 	}
 	
 	
